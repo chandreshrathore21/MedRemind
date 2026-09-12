@@ -11,7 +11,7 @@ import 'screens/add_edit_medicine_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize web database factory for sqflite 1.x.x
+  // Initialize web database factory for sqflite web support
   if (kIsWeb) {
     databaseFactory = databaseFactoryFfiWeb;
   }
@@ -81,65 +81,87 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: medProvider.medicines.length,
                   itemBuilder: (context, index) {
                     final med = medProvider.medicines[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      elevation: 2,
-                      child: ListTile(
-                        // 1. Tap anywhere on card to edit
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AddEditMedicineScreen(
-                                medicineToEdit: med,
+                    return Dismissible(
+                      key: Key(med.id.toString()),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: const Icon(Icons.delete, color: Colors.white, size: 28),
+                      ),
+                      confirmDismiss: (direction) async {
+                        return await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Delete Medication'),
+                            content: Text('Are you sure you want to delete "${med.name}"?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(false),
+                                child: const Text('Cancel'),
                               ),
-                            ),
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(true),
+                                child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        ) ?? false;
+                      },
+                      onDismissed: (direction) {
+                        if (med.id != null) {
+                          context.read<MedicineProvider>().deleteMedicine(med.id!);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('${med.name} deleted')),
                           );
-                          if (mounted) {
-                            context.read<MedicineProvider>().fetchMedicines();
-                          }
-                        },
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.teal,
-                          child: Icon(Icons.medication, color: Colors.white),
-                        ),
-                        title: Text(
-                          med.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                        ),
-                        subtitle: Text(
-                          '${med.frequency}\nTime: ${med.scheduleTime} | Stock: ${med.inventoryCount}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // 2. Edit Button
-                            IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.teal),
-                              onPressed: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => AddEditMedicineScreen(
-                                      medicineToEdit: med,
-                                    ),
+                        }
+                      },
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        elevation: 2,
+                        child: ListTile(
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AddEditMedicineScreen(
+                                  medicineToEdit: med,
+                                ),
+                              ),
+                            );
+                            if (mounted) {
+                              context.read<MedicineProvider>().fetchMedicines();
+                            }
+                          },
+                          leading: const CircleAvatar(
+                            backgroundColor: Colors.teal,
+                            child: Icon(Icons.medication, color: Colors.white),
+                          ),
+                          title: Text(
+                            med.name,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          ),
+                          subtitle: Text(
+                            '${med.frequency}\nTime: ${med.scheduleTime} | Stock: ${med.inventoryCount}',
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.teal),
+                            onPressed: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AddEditMedicineScreen(
+                                    medicineToEdit: med,
                                   ),
-                                );
-                                if (mounted) {
-                                  context.read<MedicineProvider>().fetchMedicines();
-                                }
-                              },
-                            ),
-                            // 3. Delete Button
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.redAccent),
-                              onPressed: () {
-                                if (med.id != null) {
-                                  _confirmDelete(context, med.id!, med.name);
-                                }
-                              },
-                            ),
-                          ],
+                                ),
+                              );
+                              if (mounted) {
+                                context.read<MedicineProvider>().fetchMedicines();
+                              }
+                            },
+                          ),
                         ),
                       ),
                     );
@@ -158,30 +180,6 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.teal,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Add Medicine', style: TextStyle(color: Colors.white)),
-      ),
-    );
-  }
-
-  // Confirmation dialog for deleting a record
-  void _confirmDelete(BuildContext context, int id, String name) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Medication'),
-        content: Text('Are you sure you want to delete "$name"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              context.read<MedicineProvider>().deleteMedicine(id);
-              Navigator.pop(ctx);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
       ),
     );
   }
