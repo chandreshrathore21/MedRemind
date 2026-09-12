@@ -56,7 +56,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Medication Reminder', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Medication Reminder',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
         actions: [
@@ -81,6 +84,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: medProvider.medicines.length,
                   itemBuilder: (context, index) {
                     final med = medProvider.medicines[index];
+                    final bool isLowStock = med.inventoryCount <= 3;
+                    final bool isOutOfStock = med.inventoryCount == 0;
+
                     return Dismissible(
                       key: Key(med.id.toString()),
                       direction: DismissDirection.endToStart,
@@ -88,15 +94,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.red,
                         alignment: Alignment.centerRight,
                         padding: const EdgeInsets.only(right: 20),
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: const Icon(Icons.delete, color: Colors.white, size: 28),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: const Icon(Icons.delete,
+                            color: Colors.white, size: 28),
                       ),
                       confirmDismiss: (direction) async {
                         return await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
                             title: const Text('Delete Medication'),
-                            content: Text('Are you sure you want to delete "${med.name}"?'),
+                            content: Text(
+                                'Are you sure you want to delete "${med.name}"?'),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.of(ctx).pop(false),
@@ -104,22 +113,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               TextButton(
                                 onPressed: () => Navigator.of(ctx).pop(true),
-                                child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                child: const Text('Delete',
+                                    style: TextStyle(color: Colors.red)),
                               ),
                             ],
                           ),
-                        ) ?? false;
+                        ) ??
+                        false;
                       },
                       onDismissed: (direction) {
                         if (med.id != null) {
-                          context.read<MedicineProvider>().deleteMedicine(med.id!);
+                          context
+                              .read<MedicineProvider>()
+                              .deleteMedicine(med.id!);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('${med.name} deleted')),
                           );
                         }
                       },
                       child: Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         elevation: 2,
                         child: ListTile(
                           onTap: () async {
@@ -132,35 +146,91 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             );
                             if (mounted) {
-                              context.read<MedicineProvider>().fetchMedicines();
+                              context
+                                  .read<MedicineProvider>()
+                                  .fetchMedicines();
                             }
                           },
-                          leading: const CircleAvatar(
-                            backgroundColor: Colors.teal,
-                            child: Icon(Icons.medication, color: Colors.white),
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                isLowStock ? Colors.orange : Colors.teal,
+                            child: const Icon(Icons.medication,
+                                color: Colors.white),
                           ),
                           title: Text(
                             med.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 18),
                           ),
-                          subtitle: Text(
-                            '${med.frequency}\nTime: ${med.scheduleTime} | Stock: ${med.inventoryCount}',
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.teal),
-                            onPressed: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => AddEditMedicineScreen(
-                                    medicineToEdit: med,
-                                  ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text('${med.frequency} | Time: ${med.scheduleTime}'),
+                              const SizedBox(height: 4),
+                              Text(
+                                isOutOfStock
+                                    ? 'OUT OF STOCK'
+                                    : 'Stock remaining: ${med.inventoryCount}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isLowStock
+                                      ? Colors.red
+                                      : Colors.grey[700],
                                 ),
-                              );
-                              if (mounted) {
-                                context.read<MedicineProvider>().fetchMedicines();
-                              }
-                            },
+                              ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  Icons.check_circle_outline,
+                                  color: isOutOfStock
+                                      ? Colors.grey
+                                      : Colors.green,
+                                  size: 28,
+                                ),
+                                tooltip: 'Take Dose',
+                                onPressed: isOutOfStock
+                                    ? null
+                                    : () {
+                                        context
+                                            .read<MedicineProvider>()
+                                            .takeDose(med);
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                                'Took dose of ${med.name}. Remaining: ${med.inventoryCount - 1}'),
+                                            duration:
+                                                const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit,
+                                    color: Colors.teal),
+                                onPressed: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          AddEditMedicineScreen(
+                                        medicineToEdit: med,
+                                      ),
+                                    ),
+                                  );
+                                  if (mounted) {
+                                    context
+                                        .read<MedicineProvider>()
+                                        .fetchMedicines();
+                                  }
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -171,7 +241,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const AddEditMedicineScreen()),
+            MaterialPageRoute(
+                builder: (context) => const AddEditMedicineScreen()),
           );
           if (mounted) {
             context.read<MedicineProvider>().fetchMedicines();
@@ -179,7 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         backgroundColor: Colors.teal,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Add Medicine', style: TextStyle(color: Colors.white)),
+        label:
+            const Text('Add Medicine', style: TextStyle(color: Colors.white)),
       ),
     );
   }

@@ -47,4 +47,14 @@ class MedicineProvider extends ChangeNotifier {
     await DatabaseHelper.instance.deleteMedicine(id);
     await fetchMedicines(); // Automatically refreshes list & notifies UI
   }
+
+  Future<void> takeDose(Medicine medicine) async {
+  if (medicine.inventoryCount > 0) {
+    final updatedMed = medicine.copyWith(
+      inventoryCount: medicine.inventoryCount - 1,
+    );
+    await DatabaseHelper.instance.updateMedicine(updatedMed);
+    await fetchMedicines(); // Refresh UI state
+  }
+}
 }
