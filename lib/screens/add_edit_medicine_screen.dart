@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/medicine.dart';
-import '../medicine_provider.dart'; // Adjust path if your provider file is located elsewhere
+import '../medicine_provider.dart';
+import '../notification_service.dart';
 
 class AddEditMedicineScreen extends StatefulWidget {
   final Medicine? medicineToEdit;
@@ -29,6 +30,9 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
 
   String _selectedFrequency = 'Once a day';
   List<TimeOfDay> _selectedTimes = [const TimeOfDay(hour: 8, minute: 0)];
+  
+  // Toggle preference: Standard Notification vs Loud Alarm
+  bool _isAlarm = false;
 
   bool get isEditing => widget.medicineToEdit != null;
 
@@ -75,7 +79,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
           times.add(TimeOfDay(hour: hour, minute: minute));
         }
       } catch (_) {
-        // Fallback default time if parsing fails
         times.add(const TimeOfDay(hour: 8, minute: 0));
       }
     }
@@ -138,9 +141,10 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
           ? 'As Needed'
           : _selectedTimes.map((t) => t.format(context)).join(', ');
 
+      final medicineName = _nameController.text.trim();
       final medicine = Medicine(
         id: isEditing ? widget.medicineToEdit!.id : null,
-        name: _nameController.text.trim(),
+        name: medicineName,
         frequency: _selectedFrequency,
         inventoryCount: int.parse(_countController.text.trim()),
         scheduleTime: formattedTimes,
@@ -148,11 +152,37 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
 
       final medProvider = context.read<MedicineProvider>();
 
-      // Call Provider methods so notifyListeners() is triggered
       if (isEditing) {
         await medProvider.updateMedicine(medicine);
       } else {
         await medProvider.addMedicine(medicine);
+      }
+
+      // Schedule reminders (Notification or Alarm based on user choice)
+      try {
+        final savedMed = medProvider.medicines.firstWhere(
+          (m) => m.name == medicineName,
+        );
+
+        if (savedMed.id != null && _selectedTimes.isNotEmpty) {
+          final notificationService = NotificationService();
+
+          for (int i = 0; i < _selectedTimes.length; i++) {
+            final time = _selectedTimes[i];
+            final notificationId = (savedMed.id! * 100) + i;
+
+            await notificationService.scheduleNotification(
+              id: notificationId,
+              title: 'Medication Reminder',
+              body: 'Time to take $medicineName!',
+              hour: time.hour,
+              minute: time.minute,
+              isAlarm: _isAlarm, // Dynamic switch parameter
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Notification scheduling error: $e');
       }
 
       if (mounted) {
@@ -207,6 +237,41 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
                     _updateTimePickerCount(newValue);
                   }
                 },
+              ),
+              const SizedBox(height: 16),
+
+              // Reminder Type Toggle (Notification vs Loud Alarm)
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade400),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: SwitchListTile(
+                  title: const Text(
+                    'Sound as Loud Alarm',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    _isAlarm
+                        ? 'Rings continuously on Alarm volume stream'
+                        : 'Displays standard banner notification',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _isAlarm ? Colors.deepOrange : Colors.grey.shade700,
+                    ),
+                  ),
+                  secondary: Icon(
+                    _isAlarm ? Icons.alarm_on : Icons.notifications,
+                    color: _isAlarm ? Colors.deepOrange : Colors.teal,
+                  ),
+                  value: _isAlarm,
+                  activeColor: Colors.deepOrange,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _isAlarm = value;
+                    });
+                  },
+                ),
               ),
               const SizedBox(height: 16),
 
