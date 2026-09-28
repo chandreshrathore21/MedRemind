@@ -1,104 +1,85 @@
-import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
 import '../models/medicine.dart';
 
 class DatabaseHelper {
-  static const _databaseName = "medremind.db";
-  static const _databaseVersion = 4; // Bumped version to force schema refresh
-
-  static const tableMedicines = 'medicines';
-
-  static const columnId = 'id';
-  static const columnName = 'name';
-  static const columnFrequency = 'frequency';
-  static const columnInventoryCount = 'inventoryCount';
-  static const columnScheduleTime = 'scheduleTime';
-
-  DatabaseHelper._privateConstructor();
-  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
-
+  static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+
+  DatabaseHelper._init();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
+    _database = await _initDB('medicines.db');
     return _database!;
   }
 
-  Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), _databaseName);
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, filePath);
+
+    // Bump version to 3 to trigger migration for isAlarm column
     return await openDatabase(
       path,
-      version: _databaseVersion,
-      onCreate: _onCreate,
+      version: 3,
+      onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
   }
 
-  Future _onCreate(Database db, int version) async {
+  Future<void> _createDB(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE $tableMedicines (
-        $columnId INTEGER PRIMARY KEY AUTOINCREMENT,
-        $columnName TEXT NOT NULL,
-        $columnFrequency TEXT NOT NULL,
-        $columnInventoryCount INTEGER NOT NULL,
-        $columnScheduleTime TEXT NOT NULL
+      CREATE TABLE medicines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        frequency TEXT NOT NULL,
+        inventoryCount INTEGER NOT NULL,
+        scheduleTime TEXT NOT NULL,
+        skippedCount INTEGER NOT NULL DEFAULT 0,
+        isAlarm INTEGER NOT NULL DEFAULT 0
       )
     ''');
-    print('--> DB DEBUG: Table created successfully');
   }
 
-  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    await db.execute('DROP TABLE IF EXISTS $tableMedicines');
-    await _onCreate(db, newVersion);
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+        'ALTER TABLE medicines ADD COLUMN skippedCount INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+        'ALTER TABLE medicines ADD COLUMN isAlarm INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
-  // INSERT MEDICINE
   Future<int> insertMedicine(Medicine medicine) async {
-    Database db = await instance.database;
-    int id = await db.insert(tableMedicines, medicine.toMap());
-    print('--> DB DEBUG: Inserted record with ID: $id');
-    return id;
+    final db = await instance.database;
+    return await db.insert('medicines', medicine.toMap());
   }
 
-  // GET ALL MEDICINES
   Future<List<Medicine>> getAllMedicines() async {
-    Database db = await instance.database;
-    final List<Map<String, dynamic>> maps = await db.query(tableMedicines);
-    print('--> DB DEBUG: Query returned ${maps.length} records');
-    return List.generate(maps.length, (i) => Medicine.fromMap(maps[i]));
+    final db = await instance.database;
+    final result = await db.query('medicines');
+    return result.map((json) => Medicine.fromMap(json)).toList();
   }
 
-  // UPDATE MEDICINE
   Future<int> updateMedicine(Medicine medicine) async {
-    Database db = await instance.database;
+    final db = await instance.database;
     return await db.update(
-      tableMedicines,
+      'medicines',
       medicine.toMap(),
-      where: '$columnId = ?',
+      where: 'id = ?',
       whereArgs: [medicine.id],
     );
   }
 
-  // DECREMENT STOCK
-  Future<int> decrementStock(int id) async {
-    Database db = await instance.database;
-    return await db.rawUpdate('''
-      UPDATE $tableMedicines 
-      SET $columnInventoryCount = CASE 
-        WHEN $columnInventoryCount > 0 THEN $columnInventoryCount - 1 
-        ELSE 0 
-      END 
-      WHERE $columnId = ?
-    ''', [id]);
-  }
-
-  // DELETE MEDICINE
   Future<int> deleteMedicine(int id) async {
-    Database db = await instance.database;
+    final db = await instance.database;
     return await db.delete(
-      tableMedicines,
-      where: '$columnId = ?',
+      'medicines',
+      where: 'id = ?',
       whereArgs: [id],
     );
   }

@@ -16,178 +16,133 @@ class AddEditMedicineScreen extends StatefulWidget {
 class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _nameController = TextEditingController();
-  final _countController = TextEditingController();
+  late TextEditingController _nameController;
+  late TextEditingController countController;
 
-  final List<String> _frequencyOptions = [
-    'Once a day',
-    'Twice a day',
-    'Three times a day',
-    'Every 8 hours',
-    'Weekly',
-    'As needed (PRN)',
-  ];
-
-  String _selectedFrequency = 'Once a day';
-  List<TimeOfDay> _selectedTimes = [const TimeOfDay(hour: 8, minute: 0)];
+  String _selectedFrequency = 'Daily';
+  TimeOfDay _selectedTime = TimeOfDay.now();
   
-  // Toggle preference: Standard Notification vs Loud Alarm
-  bool _isAlarm = false;
+  // Toggle state for persistent alarm mode
+  bool _isAlarmMode = false;
+  bool _isSaving = false;
 
-  bool get isEditing => widget.medicineToEdit != null;
+  final List<String> _frequencies = ['Daily', 'Twice Daily', 'Weekly', 'As Needed'];
 
   @override
-  void initState() {
-    super.initState();
-    if (isEditing) {
-      final med = widget.medicineToEdit!;
-      _nameController.text = med.name;
-      _countController.text = med.inventoryCount.toString();
-      _selectedFrequency = _frequencyOptions.contains(med.frequency)
-          ? med.frequency
-          : _frequencyOptions.first;
+void initState() {
+  super.initState();
+  _nameController = TextEditingController(text: widget.medicineToEdit?.name ?? '');
+  countController = TextEditingController(
+    text: widget.medicineToEdit?.inventoryCount.toString() ?? '10',
+  );
 
-      // Reconstruct reminder times from saved schedule string
-      _selectedTimes = _parseScheduleTimes(med.scheduleTime);
+  if (widget.medicineToEdit != null) {
+    _selectedFrequency = widget.medicineToEdit!.frequency;
+    _isAlarmMode = widget.medicineToEdit!.isAlarm; // Preserves persistent alarm setting
+    
+    final parts = widget.medicineToEdit!.scheduleTime.split(':');
+    if (parts.length >= 2) {
+      final hour = int.tryParse(parts[0]) ?? TimeOfDay.now().hour;
+      final minute = int.tryParse(parts[1].split(' ')[0]) ?? TimeOfDay.now().minute;
+      _selectedTime = TimeOfDay(hour: hour, minute: minute);
     }
   }
-
-  // Parse strings like "8:00 AM, 8:00 PM" back into List<TimeOfDay>
-  List<TimeOfDay> _parseScheduleTimes(String scheduleStr) {
-    if (scheduleStr == 'As Needed' || scheduleStr.isEmpty) {
-      return [];
-    }
-
-    List<TimeOfDay> times = [];
-    final timeParts = scheduleStr.split(',');
-
-    for (var rawPart in timeParts) {
-      final part = rawPart.trim();
-      try {
-        final isPm = part.toUpperCase().contains('PM');
-        final isAm = part.toUpperCase().contains('AM');
-        final cleanTime = part.replaceAll(RegExp(r'[^\d:]'), '');
-        final digits = cleanTime.split(':');
-
-        if (digits.length == 2) {
-          int hour = int.parse(digits[0]);
-          int minute = int.parse(digits[1]);
-
-          if (isPm && hour < 12) hour += 12;
-          if (isAm && hour == 12) hour = 0;
-
-          times.add(TimeOfDay(hour: hour, minute: minute));
-        }
-      } catch (_) {
-        times.add(const TimeOfDay(hour: 8, minute: 0));
-      }
-    }
-
-    return times.isEmpty ? [const TimeOfDay(hour: 8, minute: 0)] : times;
-  }
+}
 
   @override
   void dispose() {
     _nameController.dispose();
-    _countController.dispose();
+    countController.dispose();
     super.dispose();
   }
 
-  void _updateTimePickerCount(String frequency) {
-    setState(() {
-      _selectedFrequency = frequency;
-      switch (frequency) {
-        case 'Twice a day':
-          _selectedTimes = [
-            const TimeOfDay(hour: 8, minute: 0),
-            const TimeOfDay(hour: 20, minute: 0),
-          ];
-          break;
-        case 'Three times a day':
-        case 'Every 8 hours':
-          _selectedTimes = [
-            const TimeOfDay(hour: 8, minute: 0),
-            const TimeOfDay(hour: 14, minute: 0),
-            const TimeOfDay(hour: 20, minute: 0),
-          ];
-          break;
-        case 'As needed (PRN)':
-          _selectedTimes = [];
-          break;
-        case 'Once a day':
-        case 'Weekly':
-        default:
-          _selectedTimes = [const TimeOfDay(hour: 8, minute: 0)];
-          break;
-      }
-    });
-  }
-
-  Future<void> _pickTime(int index) async {
-    final TimeOfDay? picked = await showTimePicker(
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTimes[index],
+      initialTime: _selectedTime,
     );
     if (picked != null) {
-      setState(() {
-        _selectedTimes[index] = picked;
-      });
+      setState(() => _selectedTime = picked);
     }
   }
 
-  void _saveMedicine() async {
-    if (_formKey.currentState!.validate()) {
-      final String formattedTimes = _selectedTimes.isEmpty
-          ? 'As Needed'
-          : _selectedTimes.map((t) => t.format(context)).join(', ');
+  Future<void> _saveMedicine() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      final medicineName = _nameController.text.trim();
-      final medicine = Medicine(
-        id: isEditing ? widget.medicineToEdit!.id : null,
-        name: medicineName,
-        frequency: _selectedFrequency,
-        inventoryCount: int.parse(_countController.text.trim()),
-        scheduleTime: formattedTimes,
+    setState(() => _isSaving = true);
+
+    try {
+      final name = _nameController.text.trim();
+      final frequency = _selectedFrequency;
+      final inventory = int.tryParse(countController.text.trim()) ?? 0;
+      final formattedTime =
+          '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
+
+      final newMedicine = Medicine(
+        id: widget.medicineToEdit?.id,
+        name: name,
+        frequency: frequency,
+        inventoryCount: inventory,
+        scheduleTime: formattedTime,
+        skippedCount: widget.medicineToEdit?.skippedCount ?? 0,
+        isAlarm: _isAlarmMode, 
       );
 
-      final medProvider = context.read<MedicineProvider>();
+      final provider = context.read<MedicineProvider>();
 
-      if (isEditing) {
-        await medProvider.updateMedicine(medicine);
+      if (widget.medicineToEdit == null) {
+        await provider.addMedicine(newMedicine);
       } else {
-        await medProvider.addMedicine(medicine);
+        await provider.updateMedicine(newMedicine);
       }
 
-      // Schedule reminders (Notification or Alarm based on user choice)
+      // Schedule notification or persistent FLAG_INSISTENT alarm
       try {
-        final savedMed = medProvider.medicines.firstWhere(
-          (m) => m.name == medicineName,
+        final savedMed = provider.medicines.firstWhere(
+          (m) => m.name == name,
+          orElse: () => newMedicine,
         );
 
-        if (savedMed.id != null && _selectedTimes.isNotEmpty) {
-          final notificationService = NotificationService();
-
-          for (int i = 0; i < _selectedTimes.length; i++) {
-            final time = _selectedTimes[i];
-            final notificationId = (savedMed.id! * 100) + i;
-
-            await notificationService.scheduleNotification(
-              id: notificationId,
-              title: 'Medication Reminder',
-              body: 'Time to take $medicineName!',
-              hour: time.hour,
-              minute: time.minute,
-              isAlarm: _isAlarm, // Dynamic switch parameter
-            );
-          }
+        if (savedMed.id != null) {
+          await NotificationService().scheduleNotification(
+            id: savedMed.id!,
+            medicineId: savedMed.id!,
+            title: 'Time for $name',
+            body: 'Take your scheduled dose of $name ($frequency)',
+            hour: _selectedTime.hour,
+            minute: _selectedTime.minute,
+            isAlarm: _isAlarmMode, // Passes true for persistent FLAG_INSISTENT looping sound
+          );
         }
-      } catch (e) {
-        debugPrint('Notification scheduling error: $e');
+      } catch (notifErr) {
+        debugPrint('Notification warning: $notifErr');
       }
 
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.medicineToEdit == null
+                  ? '$name added successfully!'
+                  : '$name updated successfully!',
+            ),
+            backgroundColor: Colors.teal,
+          ),
+        );
         Navigator.pop(context, true);
       }
+    } catch (e) {
+      debugPrint('Save error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save medication: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -195,7 +150,7 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? 'Edit Medication' : 'Add Medication'),
+        title: Text(widget.medicineToEdit == null ? 'Add Medicine' : 'Edit Medicine'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
@@ -205,7 +160,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // Medicine Name
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -214,121 +168,103 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
                   prefixIcon: Icon(Icons.medication),
                 ),
                 validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter medicine name' : null,
+                    val == null || val.trim().isEmpty ? 'Please enter a name' : null,
               ),
               const SizedBox(height: 16),
 
-              // Frequency Dropdown
               DropdownButtonFormField<String>(
                 value: _selectedFrequency,
                 decoration: const InputDecoration(
-                  labelText: 'Frequency / Schedule',
+                  labelText: 'Frequency',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.repeat),
                 ),
-                items: _frequencyOptions.map((String option) {
-                  return DropdownMenuItem<String>(
-                    value: option,
-                    child: Text(option),
-                  );
+                items: _frequencies.map((freq) {
+                  return DropdownMenuItem(value: freq, child: Text(freq));
                 }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    _updateTimePickerCount(newValue);
-                  }
+                onChanged: (val) {
+                  if (val != null) setState(() => _selectedFrequency = val);
                 },
               ),
               const SizedBox(height: 16),
 
-              // Reminder Type Toggle (Notification vs Loud Alarm)
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade400),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: SwitchListTile(
-                  title: const Text(
-                    'Sound as Loud Alarm',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    _isAlarm
-                        ? 'Rings continuously on Alarm volume stream'
-                        : 'Displays standard banner notification',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _isAlarm ? Colors.deepOrange : Colors.grey.shade700,
-                    ),
-                  ),
-                  secondary: Icon(
-                    _isAlarm ? Icons.alarm_on : Icons.notifications,
-                    color: _isAlarm ? Colors.deepOrange : Colors.teal,
-                  ),
-                  value: _isAlarm,
-                  activeColor: Colors.deepOrange,
-                  onChanged: (bool value) {
-                    setState(() {
-                      _isAlarm = value;
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Reminder Time Pickers
-              if (_selectedTimes.isNotEmpty) ...[
-                const Text(
-                  'Reminder Times',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                ...List.generate(_selectedTimes.length, (index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: ListTile(
-                      tileColor: Colors.teal.shade50,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      leading: const Icon(Icons.access_time, color: Colors.teal),
-                      title: Text(
-                        'Dose ${index + 1} Time: ${_selectedTimes[index].format(context)}',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      trailing: const Icon(Icons.edit, color: Colors.grey),
-                      onTap: () => _pickTime(index),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 16),
-              ],
-
-              // Inventory Count
               TextFormField(
-                controller: _countController,
+                controller: countController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Total Pill Count / Inventory',
+                  labelText: 'Inventory / Stock Count',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.inventory_2),
+                  prefixIcon: Icon(Icons.inventory),
                 ),
                 validator: (val) {
-                  if (val == null || val.isEmpty) return 'Enter inventory count';
-                  if (int.tryParse(val) == null) return 'Enter a valid number';
+                  if (val == null || val.trim().isEmpty) return 'Please enter pill count';
+                  if (int.tryParse(val) == null) return 'Enter a valid integer number';
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  side: const BorderSide(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                leading: const Icon(Icons.access_time, color: Colors.teal),
+                title: const Text('Schedule Time'),
+                subtitle: Text(_selectedTime.format(context)),
+                trailing: const Icon(Icons.arrow_drop_down),
+                onTap: _pickTime,
+              ),
+              const SizedBox(height: 16),
+
+              // ===============================================================
+              // ALARM MODE TOGGLE SWITCH
+              // ===============================================================
+              Card(
+                elevation: 0,
+                color: Colors.grey.shade100,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(color: Colors.grey.shade300),
+                ),
+                child: SwitchListTile(
+                  secondary: Icon(
+                    _isAlarmMode ? Icons.alarm_on : Icons.notifications_active,
+                    color: _isAlarmMode ? Colors.red : Colors.teal,
+                  ),
+                  title: const Text(
+                    'Persistent Alarm Mode',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    _isAlarmMode
+                        ? 'Rings persistently until action taken (FLAG_INSISTENT)'
+                        : 'Standard chime notification',
+                  ),
+                  value: _isAlarmMode,
+                  activeColor: Colors.red,
+                  onChanged: (val) => setState(() => _isAlarmMode = val),
+                ),
+              ),
               const SizedBox(height: 24),
 
-              // Save Button
               ElevatedButton.icon(
-                onPressed: _saveMedicine,
-                icon: const Icon(Icons.save),
-                label: Text(isEditing ? 'Update Medication' : 'Save Medication'),
+                onPressed: _isSaving ? null : _saveMedicine,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(
+                  _isSaving ? 'Saving...' : 'Save Medication',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ],

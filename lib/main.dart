@@ -30,7 +30,6 @@ void main() async {
     ),
   );
 }
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -38,11 +37,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    // Load stored medicines from SQLite on app startup
+    WidgetsBinding.instance.addObserver(this);
     Future.microtask(() {
       if (mounted) {
         context.read<MedicineProvider>().fetchMedicines();
@@ -50,6 +49,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Refreshes UI whenever user returns to the app after background notification actions
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      context.read<MedicineProvider>().fetchMedicines();
+    }
+  }
+
+  // REQUIRED: Implements missing build method
   @override
   Widget build(BuildContext context) {
     final medProvider = context.watch<MedicineProvider>();
@@ -101,25 +115,27 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       confirmDismiss: (direction) async {
                         return await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Delete Medication'),
-                            content: Text(
-                                'Are you sure you want to delete "${med.name}"?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(ctx).pop(false),
-                                child: const Text('Cancel'),
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Delete Medication'),
+                                content: Text(
+                                    'Are you sure you want to delete "${med.name}"?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(ctx).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(ctx).pop(true),
+                                    child: const Text('Delete',
+                                        style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
                               ),
-                              TextButton(
-                                onPressed: () => Navigator.of(ctx).pop(true),
-                                child: const Text('Delete',
-                                    style: TextStyle(color: Colors.red)),
-                              ),
-                            ],
-                          ),
-                        ) ??
-                        false;
+                            ) ??
+                            false;
                       },
                       onDismissed: (direction) {
                         if (med.id != null) {
@@ -135,85 +151,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         margin: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 8),
                         elevation: 2,
-                        child: ListTile(
-                          onTap: () async {
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => AddEditMedicineScreen(
-                                  medicineToEdit: med,
-                                ),
-                              ),
-                            );
-                            if (mounted) {
-                              context
-                                  .read<MedicineProvider>()
-                                  .fetchMedicines();
-                            }
-                          },
-                          leading: CircleAvatar(
-                            backgroundColor:
-                                isLowStock ? Colors.orange : Colors.teal,
-                            child: const Icon(Icons.medication,
-                                color: Colors.white),
-                          ),
-                          title: Text(
-                            med.name,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 18),
-                          ),
-                          subtitle: Column(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const SizedBox(height: 4),
-                              Text('${med.frequency} | Time: ${med.scheduleTime}'),
-                              const SizedBox(height: 4),
-                              Text(
-                                isOutOfStock
-                                    ? 'OUT OF STOCK'
-                                    : 'Stock remaining: ${med.inventoryCount}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: isLowStock
-                                      ? Colors.red
-                                      : Colors.grey[700],
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  Icons.check_circle_outline,
-                                  color: isOutOfStock
-                                      ? Colors.grey
-                                      : Colors.green,
-                                  size: 28,
-                                ),
-                                tooltip: 'Take Dose',
-                                onPressed: isOutOfStock
-                                    ? null
-                                    : () {
-                                        context
-                                            .read<MedicineProvider>()
-                                            .takeDose(med);
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                'Took dose of ${med.name}. Remaining: ${med.inventoryCount - 1}'),
-                                            duration:
-                                                const Duration(seconds: 2),
-                                          ),
-                                        );
-                                      },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit,
-                                    color: Colors.teal),
-                                onPressed: () async {
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                onTap: () async {
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -229,7 +174,137 @@ class _HomeScreenState extends State<HomeScreen> {
                                         .fetchMedicines();
                                   }
                                 },
+                                leading: CircleAvatar(
+                                  backgroundColor:
+                                      isLowStock ? Colors.orange : Colors.teal,
+                                  child: const Icon(Icons.medication,
+                                      color: Colors.white),
+                                ),
+                                title: Text(
+                                  med.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    Text(
+                                        '${med.frequency} | Time: ${med.scheduleTime}'),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      isOutOfStock
+                                          ? 'OUT OF STOCK'
+                                          : 'Stock remaining: ${med.inventoryCount}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: isLowStock
+                                            ? Colors.red
+                                            : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.check_circle_outline,
+                                        color: isOutOfStock
+                                            ? Colors.grey
+                                            : Colors.green,
+                                        size: 28,
+                                      ),
+                                      tooltip: 'Take Dose',
+                                      onPressed: isOutOfStock || med.id == null
+                                          ? null
+                                          : () {
+                                              context
+                                                  .read<MedicineProvider>()
+                                                  .markAsTaken(med.id!);
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                      'Took dose of ${med.name}. Remaining: ${med.inventoryCount - 1}'),
+                                                  duration: const Duration(
+                                                      seconds: 2),
+                                                ),
+                                              );
+                                            },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit,
+                                          color: Colors.teal),
+                                      onPressed: () async {
+                                        await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                AddEditMedicineScreen(
+                                              medicineToEdit: med,
+                                            ),
+                                          ),
+                                        );
+                                        if (mounted) {
+                                          context
+                                              .read<MedicineProvider>()
+                                              .fetchMedicines();
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
                               ),
+
+                              // Warning Banner for Skipped Doses
+                              if (med.skippedCount > 0) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: Colors.amber.shade700),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.warning_amber_rounded,
+                                          color: Colors.amber.shade900),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Warning: ${med.skippedCount} dose(s) marked as skipped!',
+                                          style: TextStyle(
+                                            color: Colors.amber.shade900,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          if (med.id != null) {
+                                            context
+                                                .read<MedicineProvider>()
+                                                .clearSkippedWarning(med.id!);
+                                          }
+                                        },
+                                        child: const Text(
+                                          'Dismiss',
+                                          style: TextStyle(
+                                              color: Colors.teal,
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
