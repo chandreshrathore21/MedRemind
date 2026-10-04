@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/medicine.dart';
+import '../models/otc_medicine.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -21,7 +22,7 @@ class DatabaseHelper {
     // Bump version to 3 to trigger migration for isAlarm column
     return await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -39,6 +40,15 @@ class DatabaseHelper {
         isAlarm INTEGER NOT NULL DEFAULT 0
       )
     ''');
+    await db.execute('''
+    CREATE TABLE otc_inventory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      category TEXT NOT NULL,
+      expiryDate TEXT
+    )
+  ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -52,8 +62,47 @@ class DatabaseHelper {
         'ALTER TABLE medicines ADD COLUMN isAlarm INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 5) {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS otc_inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        expiryDate TEXT
+      )
+    ''');
   }
+  }
+Future<int> insertOtcMedicine(OtcMedicine med) async {
+  final db = await instance.database;
+  return await db.insert('otc_inventory', med.toMap());
+}
 
+Future<List<OtcMedicine>> getAllOtcMedicines() async {
+  final db = await instance.database;
+  final result = await db.query('otc_inventory');
+  return result.map((json) => OtcMedicine.fromMap(json)).toList();
+}
+
+Future<int> updateOtcMedicine(OtcMedicine med) async {
+  final db = await instance.database;
+  return await db.update(
+    'otc_inventory',
+    med.toMap(),
+    where: 'id = ?',
+    whereArgs: [med.id],
+  );
+}
+
+Future<int> deleteOtcMedicine(int id) async {
+  final db = await instance.database;
+  return await db.delete(
+    'otc_inventory',
+    where: 'id = ?',
+    whereArgs: [id],
+  );
+}
   Future<int> insertMedicine(Medicine medicine) async {
     final db = await instance.database;
     return await db.insert('medicines', medicine.toMap());
@@ -64,6 +113,7 @@ class DatabaseHelper {
     final result = await db.query('medicines');
     return result.map((json) => Medicine.fromMap(json)).toList();
   }
+  
 
   Future<int> updateMedicine(Medicine medicine) async {
     final db = await instance.database;
