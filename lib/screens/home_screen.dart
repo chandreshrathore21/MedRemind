@@ -37,6 +37,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  String _formatTime(DateTime? dateTime) {
+    if (dateTime == null) return 'Not set';
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     final medProvider = context.watch<MedicineProvider>();
@@ -64,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. OTC / First Aid Stock Card (ALWAYS VISIBLE AT TOP)
+                  // 1. OTC / First Aid Stock Card
                   const OtcInventoryBox(),
 
                   const Padding(
@@ -108,29 +115,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             color: Colors.red,
                             alignment: Alignment.centerRight,
                             padding: const EdgeInsets.only(right: 20),
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
-                            child: const Icon(Icons.delete,
-                                color: Colors.white, size: 28),
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: const Icon(Icons.delete, color: Colors.white, size: 28),
                           ),
                           confirmDismiss: (direction) async {
                             return await showDialog<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
                                     title: const Text('Delete Medication'),
-                                    content: Text(
-                                        'Are you sure you want to delete "${med.name}"?'),
+                                    content: Text('Are you sure you want to delete "${med.name}"?'),
                                     actions: [
                                       TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(ctx).pop(false),
+                                        onPressed: () => Navigator.of(ctx).pop(false),
                                         child: const Text('Cancel'),
                                       ),
                                       TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(ctx).pop(true),
-                                        child: const Text('Delete',
-                                            style: TextStyle(color: Colors.red)),
+                                        onPressed: () => Navigator.of(ctx).pop(true),
+                                        child: const Text('Delete', style: TextStyle(color: Colors.red)),
                                       ),
                                     ],
                                   ),
@@ -139,17 +140,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           },
                           onDismissed: (direction) {
                             if (med.id != null) {
-                              context
-                                  .read<MedicineProvider>()
-                                  .deleteMedicine(med.id!);
+                              context.read<MedicineProvider>().deleteMedicine(med.id!);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('${med.name} deleted')),
                               );
                             }
                           },
                           child: Card(
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             elevation: 2,
                             child: Padding(
                               padding: const EdgeInsets.all(12.0),
@@ -162,37 +160,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       await Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) =>
-                                              AddEditMedicineScreen(
+                                          builder: (context) => AddEditMedicineScreen(
                                             medicineToEdit: med,
                                           ),
                                         ),
                                       );
                                       if (mounted) {
-                                        context
-                                            .read<MedicineProvider>()
-                                            .fetchMedicines();
+                                        context.read<MedicineProvider>().fetchMedicines();
                                       }
                                     },
                                     leading: CircleAvatar(
-                                      backgroundColor:
-                                          isLowStock ? Colors.orange : Colors.teal,
-                                      child: const Icon(Icons.medication,
-                                          color: Colors.white),
+                                      backgroundColor: isLowStock ? Colors.orange : Colors.teal,
+                                      child: const Icon(Icons.medication, color: Colors.white),
                                     ),
                                     title: Text(
                                       med.name,
                                       style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18),
+                                          fontWeight: FontWeight.bold, fontSize: 18),
                                     ),
                                     subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         const SizedBox(height: 4),
-                                        Text(
-                                            '${med.frequency} | Time: ${med.scheduleTime}'),
+                                        Text('${med.frequency} | Time: ${_formatTime(med.scheduledTime)}'),
                                         const SizedBox(height: 4),
                                         Text(
                                           isOutOfStock
@@ -200,9 +190,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                               : 'Stock remaining: ${med.inventoryCount}',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: isLowStock
-                                                ? Colors.red
-                                                : Colors.grey[700],
+                                            color: isLowStock ? Colors.red : Colors.grey[700],
                                           ),
                                         ),
                                       ],
@@ -213,9 +201,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         IconButton(
                                           icon: Icon(
                                             Icons.check_circle_outline,
-                                            color: isOutOfStock
-                                                ? Colors.grey
-                                                : Colors.green,
+                                            color: isOutOfStock ? Colors.grey : Colors.green,
                                             size: 28,
                                           ),
                                           tooltip: 'Take Dose',
@@ -225,57 +211,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                   context
                                                       .read<MedicineProvider>()
                                                       .markAsTaken(med.id!);
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
+                                                  ScaffoldMessenger.of(context).showSnackBar(
                                                     SnackBar(
                                                       content: Text(
                                                           'Took dose of ${med.name}. Remaining: ${med.inventoryCount - 1}'),
-                                                      duration: const Duration(
-                                                          seconds: 2),
+                                                      duration: const Duration(seconds: 2),
                                                     ),
                                                   );
                                                 },
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.edit,
-                                              color: Colors.teal),
+                                          icon: const Icon(Icons.edit, color: Colors.teal),
                                           onPressed: () async {
                                             await Navigator.push(
                                               context,
                                               MaterialPageRoute(
-                                                builder: (context) =>
-                                                    AddEditMedicineScreen(
+                                                builder: (context) => AddEditMedicineScreen(
                                                   medicineToEdit: med,
                                                 ),
                                               ),
                                             );
                                             if (mounted) {
-                                              context
-                                                  .read<MedicineProvider>()
-                                                  .fetchMedicines();
+                                              context.read<MedicineProvider>().fetchMedicines();
                                             }
                                           },
                                         ),
                                       ],
                                     ),
                                   ),
-
-                                  // Warning Banner for Skipped Doses
                                   if (med.skippedCount > 0) ...[
                                     const SizedBox(height: 8),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 8),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                       decoration: BoxDecoration(
                                         color: Colors.amber.shade100,
                                         borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color: Colors.amber.shade700),
+                                        border: Border.all(color: Colors.amber.shade700),
                                       ),
                                       child: Row(
                                         children: [
-                                          Icon(Icons.warning_amber_rounded,
-                                              color: Colors.amber.shade900),
+                                          Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -298,8 +273,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                             child: const Text(
                                               'Dismiss',
                                               style: TextStyle(
-                                                  color: Colors.teal,
-                                                  fontWeight: FontWeight.bold),
+                                                  color: Colors.teal, fontWeight: FontWeight.bold),
                                             ),
                                           ),
                                         ],
@@ -320,8 +294,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onPressed: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(
-                builder: (context) => const AddEditMedicineScreen()),
+            MaterialPageRoute(builder: (context) => const AddEditMedicineScreen()),
           );
           if (mounted) {
             context.read<MedicineProvider>().fetchMedicines();
@@ -329,8 +302,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         },
         backgroundColor: Colors.teal,
         icon: const Icon(Icons.add, color: Colors.white),
-        label:
-            const Text('Add Medicine', style: TextStyle(color: Colors.white)),
+        label: const Text('Add Medicine', style: TextStyle(color: Colors.white)),
       ),
     );
   }
@@ -360,16 +332,13 @@ class _OtcInventoryBoxState extends State<OtcInventoryBox> {
     setState(() => _isLoading = true);
     try {
       final items = await DatabaseHelper.instance.getAllOtcMedicines();
-      print('DEBUG: Successfully loaded ${items.length} OTC items');
       if (mounted) {
         setState(() {
           _otcList = items;
           _isLoading = false;
         });
       }
-    } catch (e, stackTrace) {
-      print('DEBUG ERROR loading OTC items: $e');
-      print(stackTrace);
+    } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -386,7 +355,9 @@ class _OtcInventoryBoxState extends State<OtcInventoryBox> {
         expiryDate: med.expiryDate,
       );
       await DatabaseHelper.instance.updateOtcMedicine(updated);
-      _loadOtcItems();
+      if (mounted) {
+        _loadOtcItems();
+      }
     }
   }
 
@@ -480,7 +451,9 @@ class _OtcInventoryBoxState extends State<OtcInventoryBox> {
                   if (ctx.mounted) {
                     Navigator.pop(ctx);
                   }
-                  _loadOtcItems();
+                  if (mounted) {
+                    _loadOtcItems();
+                  }
                 }
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
@@ -506,8 +479,8 @@ class _OtcInventoryBoxState extends State<OtcInventoryBox> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: const [
+                const Row(
+                  children: [
                     Icon(Icons.medical_services_outlined, color: Colors.teal),
                     SizedBox(width: 8),
                     Text(
@@ -575,7 +548,9 @@ class _OtcInventoryBoxState extends State<OtcInventoryBox> {
                                   onPressed: () async {
                                     if (item.id != null) {
                                       await DatabaseHelper.instance.deleteOtcMedicine(item.id!);
-                                      _loadOtcItems();
+                                      if (mounted) {
+                                        _loadOtcItems();
+                                      }
                                     }
                                   },
                                 ),

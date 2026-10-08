@@ -7,7 +7,7 @@ import '../notification_service.dart';
 class AddEditMedicineScreen extends StatefulWidget {
   final Medicine? medicineToEdit;
 
-  const AddEditMedicineScreen({Key? key, this.medicineToEdit}) : super(key: key);
+  const AddEditMedicineScreen({super.key, this.medicineToEdit});
 
   @override
   State<AddEditMedicineScreen> createState() => _AddEditMedicineScreenState();
@@ -17,42 +17,46 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _nameController;
-  late TextEditingController countController;
+  late TextEditingController _countController;
 
   String _selectedFrequency = 'Daily';
   TimeOfDay _selectedTime = TimeOfDay.now();
-  
-  // Toggle state for persistent alarm mode
+
   bool _isAlarmMode = false;
   bool _isSaving = false;
 
   final List<String> _frequencies = ['Daily', 'Twice Daily', 'Weekly', 'As Needed'];
 
   @override
-void initState() {
-  super.initState();
-  _nameController = TextEditingController(text: widget.medicineToEdit?.name ?? '');
-  countController = TextEditingController(
-    text: widget.medicineToEdit?.inventoryCount.toString() ?? '10',
-  );
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.medicineToEdit?.name ?? '');
+    _countController = TextEditingController(
+      text: widget.medicineToEdit?.inventoryCount.toString() ?? '10',
+    );
 
-  if (widget.medicineToEdit != null) {
-    _selectedFrequency = widget.medicineToEdit!.frequency;
-    _isAlarmMode = widget.medicineToEdit!.isAlarm; // Preserves persistent alarm setting
-    
-    final parts = widget.medicineToEdit!.scheduleTime.split(':');
-    if (parts.length >= 2) {
-      final hour = int.tryParse(parts[0]) ?? TimeOfDay.now().hour;
-      final minute = int.tryParse(parts[1].split(' ')[0]) ?? TimeOfDay.now().minute;
-      _selectedTime = TimeOfDay(hour: hour, minute: minute);
+    if (widget.medicineToEdit != null) {
+      _selectedFrequency = widget.medicineToEdit!.frequency;
+      _isAlarmMode = widget.medicineToEdit!.isAlarm;
+
+      try {
+        final timeStr = widget.medicineToEdit!.scheduleTime;
+        final parts = timeStr.split(':');
+        if (parts.length >= 2) {
+          final hour = int.tryParse(parts[0]) ?? TimeOfDay.now().hour;
+          final minute = int.tryParse(parts[1].split(' ')[0].replaceAll(RegExp(r'[^0-9]'), '')) ?? TimeOfDay.now().minute;
+          _selectedTime = TimeOfDay(hour: hour, minute: minute);
+        }
+      } catch (e) {
+        debugPrint('Error parsing schedule time: $e');
+      }
     }
   }
-}
 
   @override
   void dispose() {
     _nameController.dispose();
-    countController.dispose();
+    _countController.dispose();
     super.dispose();
   }
 
@@ -74,9 +78,18 @@ void initState() {
     try {
       final name = _nameController.text.trim();
       final frequency = _selectedFrequency;
-      final inventory = int.tryParse(countController.text.trim()) ?? 0;
+      final inventory = int.tryParse(_countController.text.trim()) ?? 0;
       final formattedTime =
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
+
+      final now = DateTime.now();
+      final scheduledDateTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
 
       final newMedicine = Medicine(
         id: widget.medicineToEdit?.id,
@@ -84,8 +97,9 @@ void initState() {
         frequency: frequency,
         inventoryCount: inventory,
         scheduleTime: formattedTime,
+        scheduledTime: scheduledDateTime,
         skippedCount: widget.medicineToEdit?.skippedCount ?? 0,
-        isAlarm: _isAlarmMode, 
+        isAlarm: _isAlarmMode,
       );
 
       final provider = context.read<MedicineProvider>();
@@ -96,24 +110,26 @@ void initState() {
         await provider.updateMedicine(newMedicine);
       }
 
-      // Schedule notification or persistent FLAG_INSISTENT alarm
       try {
         final savedMed = provider.medicines.firstWhere(
           (m) => m.name == name,
           orElse: () => newMedicine,
         );
 
-        if (savedMed.id != null) {
-          await NotificationService().scheduleNotification(
-            id: savedMed.id!,
-            medicineId: savedMed.id!,
-            title: 'Time for $name',
-            body: 'Take your scheduled dose of $name ($frequency)',
-            hour: _selectedTime.hour,
-            minute: _selectedTime.minute,
-            isAlarm: _isAlarmMode, // Passes true for persistent FLAG_INSISTENT looping sound
-          );
+        final notificationId = savedMed.id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000);
+
+        var notificationScheduleTime = scheduledDateTime;
+        if (notificationScheduleTime.isBefore(now)) {
+          notificationScheduleTime = notificationScheduleTime.add(const Duration(days: 1));
         }
+
+        await NotificationService().scheduleNotification(
+          id: notificationId,
+          title: 'Time for $name',
+          body: 'Take your scheduled dose of $name ($frequency)',
+          scheduledTime: notificationScheduleTime,
+          isAlarm: _isAlarmMode,
+        );
       } catch (notifErr) {
         debugPrint('Notification warning: $notifErr');
       }
@@ -142,7 +158,9 @@ void initState() {
         );
       }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -189,7 +207,7 @@ void initState() {
               const SizedBox(height: 16),
 
               TextFormField(
-                controller: countController,
+                controller: _countController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Inventory / Stock Count',
@@ -198,7 +216,7 @@ void initState() {
                 ),
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) return 'Please enter pill count';
-                  if (int.tryParse(val) == null) return 'Enter a valid integer number';
+                  if (int.tryParse(val.trim()) == null) return 'Enter a valid integer number';
                   return null;
                 },
               ),
@@ -217,9 +235,6 @@ void initState() {
               ),
               const SizedBox(height: 16),
 
-              // ===============================================================
-              // ALARM MODE TOGGLE SWITCH
-              // ===============================================================
               Card(
                 elevation: 0,
                 color: Colors.grey.shade100,

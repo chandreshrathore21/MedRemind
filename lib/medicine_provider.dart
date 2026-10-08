@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'models/medicine.dart';
-import 'database/database_helper.dart'; // Adjust path if your helper is in a folder (e.g., database/database_helper.dart)
+import 'database/database_helper.dart';
+import 'notification_service.dart';
 
 class MedicineProvider with ChangeNotifier {
   List<Medicine> _medicines = [];
@@ -8,7 +9,7 @@ class MedicineProvider with ChangeNotifier {
 
   // Getters
   List<Medicine> get medicines => _medicines;
-  bool get isLoading => _isLoading; // <-- Fixes 'isLoading' getter error
+  bool get isLoading => _isLoading;
 
   /// Fetches stored medicines from SQLite
   Future<void> fetchMedicines() async {
@@ -22,6 +23,66 @@ class MedicineProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Adds a new medicine to DB and schedules its notification
+  Future<void> addMedicine(Medicine medicine) async {
+    try {
+      // 1. Insert into database and retrieve auto-incremented ID
+      final insertedId = await DatabaseHelper.instance.insertMedicine(medicine);
+
+      // 2. Schedule notification if a scheduled time exists
+      if (medicine.scheduledTime != null) {
+        await NotificationService().scheduleNotification(
+          id: insertedId,
+          title: 'Time for ${medicine.name}',
+          body: 'Dosage: ${medicine.dosage}. Tap to mark as taken.',
+          scheduledTime: medicine.scheduledTime!,
+        );
+      }
+
+      // 3. Refresh list in memory
+      await fetchMedicines();
+    } catch (e) {
+      debugPrint('Error adding medicine: $e');
+    }
+  }
+
+  /// Updates an existing medicine and reschedules its notification
+  Future<void> updateMedicine(Medicine medicine) async {
+    try {
+      await DatabaseHelper.instance.updateMedicine(medicine);
+
+      if (medicine.id != null) {
+        // Cancel existing notification
+        await NotificationService().cancelNotification(medicine.id!);
+
+        // Reschedule if valid scheduled time exists
+        if (medicine.scheduledTime != null) {
+          await NotificationService().scheduleNotification(
+            id: medicine.id!,
+            title: 'Time for ${medicine.name}',
+            body: 'Dosage: ${medicine.dosage}. Tap to mark as taken.',
+            scheduledTime: medicine.scheduledTime!,
+          );
+        }
+      }
+
+      await fetchMedicines();
+    } catch (e) {
+      debugPrint('Error updating medicine: $e');
+    }
+  }
+
+  /// Deletes a medicine and cancels its scheduled alarm
+  Future<void> deleteMedicine(int id) async {
+    try {
+      await DatabaseHelper.instance.deleteMedicine(id);
+      await NotificationService().cancelNotification(id);
+      await fetchMedicines();
+    } catch (e) {
+      debugPrint('Error deleting medicine: $e');
     }
   }
 
@@ -61,20 +122,5 @@ class MedicineProvider with ChangeNotifier {
       await DatabaseHelper.instance.updateMedicine(updated);
       await fetchMedicines();
     }
-  }
-
-  Future<void> addMedicine(Medicine medicine) async {
-    await DatabaseHelper.instance.insertMedicine(medicine);
-    await fetchMedicines();
-  }
-
-  Future<void> updateMedicine(Medicine medicine) async {
-    await DatabaseHelper.instance.updateMedicine(medicine);
-    await fetchMedicines();
-  }
-
-  Future<void> deleteMedicine(int id) async {
-    await DatabaseHelper.instance.deleteMedicine(id);
-    await fetchMedicines();
   }
 }
