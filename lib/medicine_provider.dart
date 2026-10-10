@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'models/medicine.dart';
 import 'database/database_helper.dart';
 import 'notification_service.dart';
@@ -35,11 +36,13 @@ class MedicineProvider with ChangeNotifier {
       // 2. Schedule notification if a scheduled time exists
       if (medicine.scheduledTime != null) {
         await NotificationService().scheduleNotification(
-          id: insertedId,
-          title: 'Time for ${medicine.name}',
-          body: 'Dosage: ${medicine.dosage}. Tap to mark as taken.',
-          scheduledTime: medicine.scheduledTime!,
-        );
+  id: insertedId,
+  title: medicine.name,
+  body: 'Time to take your ${medicine.dosage}',
+  hour: medicine.scheduledTime!.hour,
+  minute: medicine.scheduledTime!.minute,
+  isAlarm: medicine.isAlarm,
+);
       }
 
       // 3. Refresh list in memory
@@ -64,7 +67,9 @@ class MedicineProvider with ChangeNotifier {
             id: medicine.id!,
             title: 'Time for ${medicine.name}',
             body: 'Dosage: ${medicine.dosage}. Tap to mark as taken.',
-            scheduledTime: medicine.scheduledTime!,
+            hour: medicine.scheduledTime!.hour,
+            minute: medicine.scheduledTime!.minute,
+            isAlarm: medicine.isAlarm,
           );
         }
       }

@@ -127,7 +127,8 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
           id: notificationId,
           title: 'Time for $name',
           body: 'Take your scheduled dose of $name ($frequency)',
-          scheduledTime: notificationScheduleTime,
+          hour: notificationScheduleTime.hour,
+          minute: notificationScheduleTime.minute,
           isAlarm: _isAlarmMode,
         );
       } catch (notifErr) {

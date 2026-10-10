@@ -6,10 +6,42 @@ import 'package:timezone/timezone.dart' as tz;
 
 /// Background notification response handler
 @pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse details) {
-  debugPrint('Background action tapped: ${details.actionId}');
-  if (details.actionId == 'dismiss_alarm' && details.id != null) {
-    FlutterLocalNotificationsPlugin().cancel(id: details.id!);
+void notificationTapBackground(NotificationResponse details) async {
+  debugPrint('Background action tapped: ${details.actionId} | Payload: ${details.payload}');
+  
+  final int? notificationId = details.id;
+  if (notificationId == null) return;
+
+  final plugin = FlutterLocalNotificationsPlugin();
+
+  if (details.actionId == 'taken_action') {
+    // Mark as taken (Notification is auto-cancelled by action config)
+    debugPrint('Medicine $notificationId marked as TAKEN from background');
+    // Optional: Add direct database helper call here if needed
+  } else if (details.actionId == 'skipped_action') {
+    debugPrint('Medicine $notificationId marked as SKIPPED from background');
+  } else if (details.actionId == 'snooze_action') {
+    // Reschedule the same notification 10 minutes from now
+    final snoozeTime = tz.TZDateTime.now(tz.local).add(const Duration(minutes: 10));
+    
+    // Re-trigger notification 10 minutes later
+    await plugin.zonedSchedule(
+      id: notificationId,
+      title: 'Snoozed Reminder',
+      body: 'Time to take your medicine (Snoozed)',
+      payload: details.payload,
+      scheduledDate: snoozeTime,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'med_remind_channel',
+          'Medication Reminders',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    );
+    debugPrint('Medicine $notificationId snoozed for 10 minutes.');
   }
 }
 
@@ -52,12 +84,21 @@ class NotificationService {
       iOS: darwinSettings,
     );
 
-    await _notificationsPlugin.initialize(
+   await _notificationsPlugin.initialize(
       settings: initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse details) {
-        debugPrint('Tapped: ${details.payload}');
-        if (details.actionId == 'dismiss_alarm' && details.id != null) {
-          _notificationsPlugin.cancel(id: details.id!);
+        debugPrint('Foreground action tapped: ${details.actionId}');
+        
+        final int? id = details.id;
+        if (id == null) return;
+
+        if (details.actionId == 'taken_action') {
+          debugPrint('Taken action clicked in foreground for ID: $id');
+        } else if (details.actionId == 'skipped_action') {
+          debugPrint('Skipped action clicked in foreground for ID: $id');
+        } else if (details.actionId == 'snooze_action') {
+          debugPrint('Snooze action clicked in foreground for ID: $id');
+          // Handle foreground snooze logic or call provider method
         }
       },
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
@@ -98,58 +139,56 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
-    required DateTime scheduledTime,
+    required int hour,
+    required int minute,
     bool isAlarm = false,
   }) async {
     try {
       final now = tz.TZDateTime.now(tz.local);
-      
-      // Convert incoming DateTime to TZDateTime
-      var scheduledDate = tz.TZDateTime.from(scheduledTime, tz.local);
+      var scheduledDate = tz.TZDateTime(
+        tz.local,
+        now.year,
+        now.month,
+        now.day,
+        hour,
+        minute,
+      );
 
-      // Roll over to next day if target time passed today
       if (scheduledDate.isBefore(now)) {
         scheduledDate = scheduledDate.add(const Duration(days: 1));
       }
 
-      debugPrint('=== SCHEDULING REMINDER ===');
-      debugPrint('Mode: ${isAlarm ? "LOUD ALARM" : "STANDARD NOTIFICATION"}');
-      debugPrint('Current Time: $now');
-      debugPrint('Target Time:  $scheduledDate');
-
-      final AndroidNotificationDetails androidDetails = isAlarm
-          ? AndroidNotificationDetails(
-              'med_alarm_sticky_v3',
-              'Medication Alarms',
-              channelDescription: 'Persistent alarm reminders for medication',
-              importance: Importance.max,
-              priority: Priority.max,
-              playSound: true,
-              enableVibration: true,
-              audioAttributesUsage: AudioAttributesUsage.alarm,
-              category: AndroidNotificationCategory.alarm,
-              fullScreenIntent: true,
-              ongoing: true,
-              autoCancel: false,
-              additionalFlags: Int32List.fromList([4]), // FLAG_INSISTENT
-              actions: <AndroidNotificationAction>[
-                const AndroidNotificationAction(
-                  'dismiss_alarm',
-                  'Dismiss Alarm',
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-              ],
-            )
-          : const AndroidNotificationDetails(
-              'med_remind_channel',
-              'Medication Reminders',
-              channelDescription: 'Standard notification reminders for medication',
-              importance: Importance.high,
-              priority: Priority.high,
-              playSound: true,
-              enableVibration: true,
-            );
+      final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        isAlarm ? 'med_alarm_sticky_v3' : 'med_remind_channel',
+        isAlarm ? 'Medication Alarms' : 'Medication Reminders',
+        channelDescription: 'Interactive medication reminder notifications',
+        importance: Importance.max,
+        priority: Priority.max,
+        playSound: true,
+        enableVibration: true,
+        ongoing: isAlarm,
+        autoCancel: false,
+        actions: <AndroidNotificationAction>[
+          const AndroidNotificationAction(
+            'taken_action',
+            'Taken',
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
+          const AndroidNotificationAction(
+            'skipped_action',
+            'Skipped',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+          const AndroidNotificationAction(
+            'snooze_action',
+            'Snooze (10m)',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+        ],
+      );
 
       final NotificationDetails platformDetails = NotificationDetails(
         android: androidDetails,
@@ -164,23 +203,26 @@ class NotificationService {
         id: id,
         title: title,
         body: body,
+        payload: id.toString(), // Passing medicine ID as payload string
         scheduledDate: scheduledDate,
         notificationDetails: platformDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.time,
       );
 
-      debugPrint('Successfully registered alarm/notification with system Alarm Manager!');
+      debugPrint('Successfully scheduled interactive notification ID: $id');
     } catch (e) {
-      debugPrint('Error scheduling notification: $e');
+      debugPrint('Error scheduling interactive notification: $e');
     }
   }
-
   Future<void> cancelNotification(int id) async {
     await _notificationsPlugin.cancel(id: id);
+    debugPrint('Cancelled notification with ID: $id');
   }
 
+  /// Cancels all scheduled notifications
   Future<void> cancelAllNotifications() async {
     await _notificationsPlugin.cancelAll();
+    debugPrint('Cancelled all notifications');
   }
-}
+  }
